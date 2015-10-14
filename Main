@@ -1,0 +1,199 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <avr/pgmspace.h> 
+
+#include "uart.h"
+#include "line_buffer.h"
+#include "circ_buffer.h"
+#include "encoder.h"
+#include "controller.h"
+//#include "motor.h"
+#include "sysid.h"
+#include "motor_test.h"
+#include "cmd_table.h"
+#include "i2cmaster.h"
+#include "imu.h"
+static LB_T lb;
+
+
+// TODO: Replace these with receive buffer declaration
+static volatile char ch;
+static volatile bool ch_waiting;
+
+
+
+
+int main(void)
+{
+
+//-----------------------------------------------------------------------------------------------------------------------//
+//							Initialise the Things
+//-----------------------------------------------------------------------------------------------------------------------//
+
+
+
+	char* cmd_array[50];		//this sring is to store the individual serial information - max length of 50 elements in array 
+	int word_count = 0;
+	int i = 0;
+	int j = 0;
+	int flag = 0; 
+	int while_flag = 0;
+
+	
+	//Initialise the things 
+	lb_init(&lb);
+	DDRD |= (1<<6);
+	uart_init(); 	// init USART
+	sei();  		// enable interrupts
+	enc_init();
+	ctrl_init();
+	PWM_init();
+	i2c_init();
+	imu_init();
+	
+	//imu_init();
+	//motor_test();
+	printf_P(PSTR("Hello World\n"));
+	//motor_init();
+	sysid_init();
+
+	// Wait a second at startup
+	_delay_ms(1000);
+
+	// send initial string
+	printf_P(PSTR("Mr. Bond, what would you like to do today?!\n"));
+
+
+	//Infinite loop
+	for (;/*ever*/;)
+	{
+
+
+		//-----------------------------------------------------------------------------------------------------------------------//
+		//							Data Logging 
+		//-----------------------------------------------------------------------------------------------------------------------//
+		/*
+		if (event_count > 0) // Operation pending, do it right now (high priority)
+			{
+					event_count = 0; // Reset counter
+					
+					
+					
+					if(log_count>0){
+					printf_P(PSTR("%f ,%f\n"),time, adc_read());
+					// TODO: Handle sampling and sending of one line of data
+					// Note: If we have sent the number requested samples,
+					// disable the data logging
+					time +=0.01;
+					log_count--;
+
+
+					if(log_count ==0){TIMSK &=~(1<<OCIE0);
+					time = 0;}
+
+					}
+			if (event_count > 0)
+				{
+					
+					// If we ever get here, the sampling/sending step above is taking
+					// too long to fit in one sampling interval!
+					printf_P(PSTR("ERROR: Sampling interval too long\n"));
+					// TODO: Print an error message and disable the data logging
+				}
+			}
+			
+			else // No pending operation, do low priority tasks
+			{
+			// TODO: Handle serial command processing here
+			
+
+
+		*/
+
+
+//-----------------------------------------------------------------------------------------------------------------------//
+//							Get data from the serial 
+//-----------------------------------------------------------------------------------------------------------------------//
+
+			while (uart_avail()) //this function 
+				{
+					char c = uart_getc();
+					if (lb_append(&lb, c) == LB_BUFFER_FULL)
+						{
+							lb_init(&lb); // Clear line
+							printf_P(PSTR("\nMax line length exceeded\n"));
+						}
+				}
+
+
+//-----------------------------------------------------------------------------------------------------------------------//
+//							Process what has been received by the serial
+//-----------------------------------------------------------------------------------------------------------------------//
+	
+		// Process command if line buffer is terminated by a line feed or carriage return
+		if (lb_line_ready(&lb))
+		{
+	
+			
+			
+			//++++++++++++++++++++++++++++++//
+			//		String Parse
+			//++++++++++++++++++++++++++++++//
+
+			//throw in command table here 
+			word_count = string_parser(lb_gets(&lb), cmd_array);
+			printf_P(PSTR("word count = %d\n"),word_count);
+			
+			for(i=0;i<word_count;i++){
+				
+				printf_P(PSTR("cmd string = %s\n"),cmd_array[i]);
+
+			}
+
+
+			//++++++++++++++++++++++++++++++//
+			//		Command Seach
+			//++++++++++++++++++++++++++++++//			
+
+			flag = 1;
+			j=0;
+			while_flag=1;
+			
+			while(while_flag!=(-1)){
+
+				flag = strcmp(cmd_array[0], cmd_table[j].cmd); //compare 
+				
+				if(flag==0){	//if string compare match flag is set to zero 
+
+					//do the command table execution. 
+					cmd_table[j].func(0,cmd_array);
+					while_flag=(-1);
+				}
+
+				j++;
+				if(j==NUM_CMDS){while_flag=(-1);}	//if all commands have been searched break out of the loop
+
+			}
+				
+
+			if(flag!=0){
+					//unknown command. 
+					printf_P(PSTR("Unknown Command ya dog\n"));
+				}
+			
+	
+			// Reset line buffer
+			lb_init(&lb);
+		
+		} // end if (lb_line_ready(&lb))
+
+}//end infinite for loop
+	
+	return 0;
+}
+
